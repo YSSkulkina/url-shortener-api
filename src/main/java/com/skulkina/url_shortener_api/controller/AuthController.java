@@ -1,6 +1,7 @@
 package com.skulkina.url_shortener_api.controller;
 
 import com.skulkina.url_shortener_api.dto.AuthResponse;
+import com.skulkina.url_shortener_api.dto.LoginRequest;
 import com.skulkina.url_shortener_api.dto.RegisterRequest;
 import com.skulkina.url_shortener_api.service.AuthService;
 import jakarta.validation.Valid;
@@ -18,6 +19,10 @@ public class AuthController {
     @ResponseStatus(HttpStatus.CREATED)
     public AuthResponse register(@Valid @RequestBody RegisterRequest request) {
         return authService.register(request);
+    }
+    @PostMapping("/login")
+    public AuthResponse login(@Valid @RequestBody LoginRequest request) {
+        return authService.login(request);
     }
 
 }

@@ -28,7 +28,7 @@ spring:
       port: 6379
 
 jwt:
-  secret: "very-secret-key-very-secret-key-very-secret-key"
+  secret: "dmVyeS1zZWNyZXQta2V5LXZlcnktc2VjcmV0LWtleS12ZXJ5LXNlY3JldC1rZXk="
   expiration: 86400000
 
 app:
