@@ -5,15 +5,17 @@ import com.skulkina.url_shortener_api.dto.LinkResponse;
 import com.skulkina.url_shortener_api.entity.Link;
 import com.skulkina.url_shortener_api.entity.Role;
 import com.skulkina.url_shortener_api.entity.User;
+import com.skulkina.url_shortener_api.exception.LinkExpiredException;
 import com.skulkina.url_shortener_api.exception.LinkNotFoundException;
+import com.skulkina.url_shortener_api.mapper.LinkMapper;
 import com.skulkina.url_shortener_api.repository.LinkRepository;
 import com.skulkina.url_shortener_api.repository.UserRepository;
+import com.skulkina.url_shortener_api.security.CurrentUserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -22,26 +24,27 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
+
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class LinkService {
     private final LinkRepository linkRepository;
-    private final UserRepository userRepository;
     private final ShortCodeGenerator shortCodeGenerator;
+    private final CurrentUserService currentUserService;
     private final RedisTemplate<String, String> redisTemplate;
 
     private static final String CACHE_PREFIX = "short-url:";
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
+    private final LinkMapper linkMapper;
 
     @Value("${app.base-url}")
     private String baseUrl;
 
     @Transactional
     public LinkResponse createLink(CreateLinkRequest request) {
-        User user = getCurrentUser();
+        User user = currentUserService.getCurrentUser();
 
         String shortCode = generateUniqueShortCode();
 
@@ -50,12 +53,13 @@ public class LinkService {
                 .shortCode(shortCode)
                 .clickCount(0L)
                 .createdAt(LocalDateTime.now())
+                .expiresAt(request.expiresAt())
                 .user(user)
                 .build();
 
         Link savedLink = linkRepository.save(link);
 
-        return toResponse(savedLink);
+        return linkMapper.toResponse(savedLink, baseUrl);
     }
 
     @Transactional
@@ -76,6 +80,10 @@ public class LinkService {
         redisTemplate.opsForValue().set(cacheKey, link.getOriginalUrl(), CACHE_TTL);
         String checkValue = redisTemplate.opsForValue().get(cacheKey);
         Long ttl = redisTemplate.getExpire(cacheKey);
+        if (link.getExpiresAt() != null && link.getExpiresAt().isBefore(LocalDateTime.now())) {
+            redisTemplate.delete(cacheKey);
+            throw new LinkExpiredException(shortCode);
+        }
 
         log.info("Saved to Redis. key={}, value={}, ttl={}", cacheKey, checkValue, ttl);
 
@@ -92,37 +100,18 @@ public class LinkService {
         return shortCode;
     }
 
-    private LinkResponse toResponse(Link link) {
-        return new LinkResponse(
-                link.getId(),
-                link.getOriginalUrl(),
-                link.getShortCode(),
-                baseUrl + "/" + link.getShortCode(),
-                link.getClickCount(),
-                link.getCreatedAt()
-        );
-    }
-    private User getCurrentUser() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        String email = authentication.getName();
-
-        return userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Current user not found: " + email));
-    }
-
-    @Transactional(readOnly = true)
+     @Transactional(readOnly = true)
     public List<LinkResponse> getCurrentUserLinks() {
-        User user = getCurrentUser();
+        User user = currentUserService.getCurrentUser();
 
         return linkRepository.findAllByUserOrderByCreatedAtDesc(user)
                 .stream()
-                .map(this::toResponse)
+                .map(link -> linkMapper.toResponse(link, baseUrl))
                 .toList();
     }
     @Transactional
     public void deleteCurrentUserLink(Long id){
-        User user = getCurrentUser();
+        User user = currentUserService.getCurrentUser();
         Link link = linkRepository.findById(id)
                 .orElseThrow(() -> new LinkNotFoundException(id));
         if (!link.getUser().getId().equals(user.getId())) {

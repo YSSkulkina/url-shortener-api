@@ -21,6 +21,13 @@ public class GlobalExceptionHandler {
     ) {
         return buildErrorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
+    @ExceptionHandler(LinkExpiredException.class)
+    public ResponseEntity<ErrorResponse> handleLinkExpired(
+            LinkExpiredException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(HttpStatus.GONE, ex.getMessage(), request);
+    }
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(
             AccessDeniedException ex,

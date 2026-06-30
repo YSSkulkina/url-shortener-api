@@ -8,7 +8,8 @@ public record LinkResponse(
         String shortCode,
         String shortUrl,
         Long clickCount,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        LocalDateTime expiresAt
 ) {
 
 }
