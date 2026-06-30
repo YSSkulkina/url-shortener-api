@@ -12,11 +12,18 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -34,16 +41,7 @@ public class LinkService {
 
     @Transactional
     public LinkResponse createLink(CreateLinkRequest request) {
-        // Временный пользователь, пока не подключили JWT Filter
-        User user = userRepository.findByEmail("demo@demo.com")
-                .orElseGet(() -> userRepository.save(
-                        User.builder()
-                                .email("demo@demo.com")
-                                .password("demo")
-                                .role(Role.USER)
-                                .createdAt(LocalDateTime.now())
-                                .build()
-                ));
+        User user = getCurrentUser();
 
         String shortCode = generateUniqueShortCode();
 
@@ -64,18 +62,13 @@ public class LinkService {
     public String getOriginalUrlAndIncrementClickCount(String shortCode) {
         String cacheKey = CACHE_PREFIX + shortCode;
 
-        log.info("Searching in Redis by key: {}", cacheKey);
-
-        String cachedUrl = redisTemplate.opsForValue().get(cacheKey);
-        log.info("Redis GET result. key={}, value={}", cacheKey, cachedUrl);
-        if (cachedUrl != null) {
+         String cachedUrl = redisTemplate.opsForValue().get(cacheKey);
+         if (cachedUrl != null) {
             log.info("Cache hit for key: {}", cacheKey);
             return cachedUrl;
         }
 
-        log.info("Cache miss. Searching in PostgreSQL by shortCode: {}", shortCode);
-
-        Link link = linkRepository.findByShortCode(shortCode)
+         Link link = linkRepository.findByShortCode(shortCode)
                 .orElseThrow(() -> new LinkNotFoundException(shortCode));
 
         link.setClickCount(link.getClickCount() + 1);
@@ -108,6 +101,38 @@ public class LinkService {
                 link.getClickCount(),
                 link.getCreatedAt()
         );
+    }
+    private User getCurrentUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        String email = authentication.getName();
+
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Current user not found: " + email));
+    }
+
+    @Transactional(readOnly = true)
+    public List<LinkResponse> getCurrentUserLinks() {
+        User user = getCurrentUser();
+
+        return linkRepository.findAllByUserOrderByCreatedAtDesc(user)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+    @Transactional
+    public void deleteCurrentUserLink(Long id){
+        User user = getCurrentUser();
+        Link link = linkRepository.findById(id)
+                .orElseThrow(() -> new LinkNotFoundException(id));
+        if (!link.getUser().getId().equals(user.getId())) {
+            throw new AccessDeniedException("You do not have permission to delete this link");
+        }
+        String cacheKey = CACHE_PREFIX + link.getShortCode();
+        linkRepository.delete(link);
+        redisTemplate.delete(cacheKey);
+
+
     }
 
 }

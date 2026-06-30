@@ -13,5 +13,6 @@ public interface LinkRepository extends JpaRepository<Link, Long> {
     boolean existsByShortCode(String shortCode);
 
     List<Link> findAllByUser(User user);
+    List<Link> findAllByUserOrderByCreatedAtDesc(User user);
 
 }

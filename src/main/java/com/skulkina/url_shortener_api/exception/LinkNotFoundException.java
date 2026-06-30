@@ -5,4 +5,8 @@ public class LinkNotFoundException extends RuntimeException {
         super("Link not found: " + shortCode);
     }
 
+    public LinkNotFoundException(Long id) {
+        super("Link not found: " + id);
+    }
+
 }
