@@ -1,5 +1,6 @@
 package com.skulkina.url_shortener_api.security;
 import com.skulkina.url_shortener_api.entity.User;
+import com.skulkina.url_shortener_api.exception.UserNotFoundException;
 import com.skulkina.url_shortener_api.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
@@ -17,7 +18,7 @@ public class CurrentUserService {
         String email = authentication.getName();
 
         return userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Current user not found: " + email));
+                .orElseThrow(() -> new UserNotFoundException(email));
     }
 
 }
